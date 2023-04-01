@@ -21,6 +21,21 @@
   outputs =
     { nixpkgs, base16, self, ... }@inputs:
     {
+      overlays = {
+          fix-codesign-allocate = selfp: superp: {
+            darwin = superp.darwin.overrideScope (self: super: {
+              postLinkSignHook = selfp.writeTextFile {
+              name = "post-link-sign-hook";
+              executable = true;
+              text = ''
+                CODESIGN_ALLOCATE=${self.cctools}/bin/${self.cctools.targetPrefix}codesign_allocate \
+                  ${self.sigtool}/bin/codesign -f -s - "$linkerOutput"
+              '';
+            };
+            });
+          };
+        };
+
       packages = nixpkgs.lib.genAttrs [
         "aarch64-darwin"
         "aarch64-linux"
@@ -29,7 +44,12 @@
         "x86_64-linux"
       ] (
         system:
-        let pkgs = nixpkgs.legacyPackages.${system};
+        let pkgs = import nixpkgs {
+            inherit system;
+            overlays = [
+              self.overlays.fix-codesign-allocate
+            ];
+          };
         in {
           docs = import ./docs {
             inherit pkgs inputs;
@@ -62,7 +82,7 @@
       darwinModules.stylix = { pkgs, ... }@args: {
         imports = [
           (import ./stylix/darwin {
-            inherit (self.package.${pkgs.system}) palette-generator;
+            inherit (self.packages.${pkgs.system}) palette-generator;
             base16 = base16.lib args;
             homeManagerModule = self.homeManagerModules.stylix;
           })
